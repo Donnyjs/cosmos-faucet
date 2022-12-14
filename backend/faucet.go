@@ -1,15 +1,10 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"github.com/dpapathanasiou/go-recaptcha"
-	"github.com/joho/godotenv"
-	"github.com/tendermint/tmlibs/bech32"
-	"github.com/tomasen/realip"
+	"github.com/gin-gonic/gin"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -41,27 +36,29 @@ func getEnv(key string) string {
 }
 
 func main() {
-	err := godotenv.Load(".env.local", ".env")
-	if err != nil {
-		log.Fatal("Error loading .env file")
-	}
+	r := gin.Default()
+	r.Use(func(c *gin.Context) {
+		origin := c.Request.Header.Get("Origin")
+		if origin != "" {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+			c.Header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE,UPDATE")
+			c.Header("Access-Control-Allow-Headers", "Authorization, Content-Length, X-CSRF-Token, Token,session")
+			c.Header("Access-Control-Expose-Headers", "Content-Length, Access-Control-Allow-Origin, Access-Control-Allow-Headers")
+			c.Header("Access-Control-Max-Age", "172800")
+			c.Header("Access-Control-Allow-Credentials", "true")
+		}
+		defer func() {
+			if err := recover(); err != nil {
 
-	chain = getEnv("FAUCET_CHAIN")
-	recaptchaSecretKey = getEnv("FAUCET_RECAPTCHA_SECRET_KEY")
-	amountFaucet = getEnv("FAUCET_AMOUNT_FAUCET")
-	amountSteak = getEnv("FAUCET_AMOUNT_STEAK")
-	key = getEnv("FAUCET_KEY")
-	pass = getEnv("FAUCET_PASS")
-	node = getEnv("FAUCET_NODE")
-	publicUrl = getEnv("FAUCET_PUBLIC_URL")
-
-	recaptcha.Init(recaptchaSecretKey)
-
-	http.HandleFunc("/claim", getCoinsHandler)
-
-	if err := http.ListenAndServe(publicUrl, nil); err != nil {
-		log.Fatal("failed to start server", err)
-	}
+			}
+		}()
+		c.Next()
+	})
+	r.GET("/claim", getCoinsHandler)
+	r.GET("/ping", func(c *gin.Context) {
+		c.JSON(200, "success")
+	})
+	r.Run(":8000")
 }
 
 func executeCmd(command string, writes ...string) {
@@ -96,51 +93,17 @@ func getCmd(command string) *exec.Cmd {
 	return cmd
 }
 
-func getCoinsHandler(w http.ResponseWriter, request *http.Request) {
-	var claim claim_struct
-
-	// decode JSON response from front end
-	decoder := json.NewDecoder(request.Body)
-	decoderErr := decoder.Decode(&claim)
-	if decoderErr != nil {
-		panic(decoderErr)
+func getCoinsHandler(c *gin.Context) {
+	fmt.Println("enter....")
+	address := c.Query("address")
+	if address == "" {
+		c.JSON(500, "param err")
+		return
 	}
-
-	// make sure address is bech32
-	readableAddress, decodedAddress, decodeErr := bech32.DecodeAndConvert(claim.Address)
-	if decodeErr != nil {
-		panic(decodeErr)
-	}
-	// re-encode the address in bech32
-	encodedAddress, encodeErr := bech32.ConvertAndEncode(readableAddress, decodedAddress)
-	if encodeErr != nil {
-		panic(encodeErr)
-	}
-
-	// make sure captcha is valid
-	clientIP := realip.FromRequest(request)
-	captchaResponse := claim.Response
-	captchaPassed, captchaErr := recaptcha.Confirm(clientIP, captchaResponse)
-	if captchaErr != nil {
-		panic(captchaErr)
-	}
-
-	// send the coins!
-	if captchaPassed {
-		sendFaucet := fmt.Sprintf(
-			"gaiacli send --to=%v --name=%v --chain-id=%v --amount=%v",
-			encodedAddress, key, chain, amountFaucet)
-		fmt.Println(time.Now().UTC().Format(time.RFC3339), encodedAddress, "[1]")
-		executeCmd(sendFaucet, pass)
-
-		time.Sleep(5 * time.Second)
-
-		sendSteak := fmt.Sprintf(
-			"gaiacli send --to=%v --name=%v --chain-id=%v --amount=%v",
-			encodedAddress, key, chain, amountSteak)
-		fmt.Println(time.Now().UTC().Format(time.RFC3339), encodedAddress, "[2]")
-		executeCmd(sendSteak, pass)
-	}
-
-	return
+	fmt.Println("address : ", address)
+	sendFaucet := fmt.Sprintf(
+		"echo 'y' | spiked tx bank send spike1fstqaepz9sl0jmm95f2dstmucakzyzxxqj5kla %v 100000000000000000uspike --keyring-backend test --gas-prices 1000000000uspike --chain-id spiketestnet_9090-1",
+		address)
+	executeCmd(sendFaucet, pass)
+	c.JSON(200, "success")
 }

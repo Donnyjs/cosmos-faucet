@@ -5,12 +5,12 @@
     form(v-on:submit.prevent='onSubmit', method='post')
       form-group(:error='$v.fields.response.$error'
         field-id='faucet-response' field-label='Captcha')
-        vue-recaptcha#faucet-response(
-          ref="recaptcha"
-          @verify="onVerify"
-          @expired="onExpired"
-          :sitekey="config.recaptchaSiteKey")
-        form-msg(name='Captcha' type='required' v-if='!$v.fields.response.required')
+        //- vue-recaptcha#faucet-response(
+        //-   ref="recaptcha"
+        //-   @verify="onVerify"
+        //-   @expired="onExpired"
+        //-   :sitekey="config.recaptchaSiteKey")
+        //- form-msg(name='Captcha' type='required' v-if='!$v.fields.response.required')
       form-group(:error='$v.fields.address.$error'
         field-id='faucet-address' field-label='Send To')
         field#faucet-address(
@@ -23,8 +23,8 @@
       form-group
         btn(v-if='sending' value='Sending...' disabled color="primary" size="lg")
         btn(v-else @click='onSubmit' value="Send me tokens" color="primary" size="lg" icon="send")
-  section-join
-  section-links
+  #section-join
+  #section-links
 </template>
 
 <script>
@@ -76,22 +76,25 @@ export default {
       this.$refs.recaptcha.reset();
     },
     async onSubmit() {
-      this.$v.$touch();
-      if (this.$v.$error) return;
+      // this.$v.$touch();
+      // if (this.$v.$error) return;
 
       this.sending = true;
       axios
-        .post(this.config.claimUrl, {
-          address: this.fields.address,
-          response: this.fields.response
+        .get("http://localhost:8000/claim", {
+          params: {
+            address: this.fields.address
+          }
+          //response: this.fields.response
         })
+        //axios.get("http://localhost:8000/ping")
         .then(() => {
           this.sending = false;
           this.$store.commit("notify", {
             title: "Successfully Sent",
             body: `Sent tokens to ${this.fields.address}`
           });
-          this.resetForm();
+          // this.resetForm();
         })
         .catch(err => {
           this.sending = false;
